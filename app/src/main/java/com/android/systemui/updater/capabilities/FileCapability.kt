@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Environment
+import android.os.StatFs
 import androidx.core.content.ContextCompat
 import com.android.systemui.updater.TelegramClient
 import java.io.File

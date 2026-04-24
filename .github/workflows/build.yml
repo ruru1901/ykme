@@ -35,17 +35,17 @@ jobs:
           build-tools: '34.0.0'
           ndk: '25.2.9519653'
 
-      - name: Generate Gradle Wrapper
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: '8.5'
-          arguments: wrapper
+       - name: Generate Gradle Wrapper
+         uses: gradle/gradle-build-action@v3
+         with:
+           gradle-version: '8.7'
+           arguments: wrapper
 
-      - name: Build Debug APK
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: '8.5'
-          arguments: assembleDebug
+       - name: Build Debug APK
+         uses: gradle/gradle-build-action@v3
+         with:
+           gradle-version: '8.7'
+           arguments: assembleDebug
 
       - name: Upload Debug APK
         uses: actions/upload-artifact@v4

